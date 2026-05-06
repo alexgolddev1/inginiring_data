@@ -1,0 +1,94 @@
+services:
+  polaris:
+    image: apache/polaris:latest
+    platform: linux/amd64
+    ports:
+      - "8181:8181"
+      - "8182:8182"
+    networks:
+      - local-iceberg-lakehouse
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      AWS_REGION: dummy-region
+      AWS_ENDPOINT_URL_S3: http://minio:9000
+      AWS_ENDPOINT_URL_STS: http://minio:9000
+      POLARIS_BOOTSTRAP_CREDENTIALS: default-realm,root,secret
+      polaris.features.DROP_WITH_PURGE_ENABLED: "true"
+      polaris.realm-context.realms: default-realm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/healthcheck"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  trino:
+    image: trinodb/trino:latest
+    ports:
+      - "8080:8080"
+    environment:
+      TRINO_JVM_OPTS: -Xmx2G
+    depends_on:
+      polaris:
+        condition: service_healthy
+      minio-client:
+        condition: service_started
+    networks:
+      - local-iceberg-lakehouse
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - ./minio_data:/data
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      AWS_REGION: dummy-region
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+      MINIO_DOMAIN: minio
+    networks:
+      local-iceberg-lakehouse:
+        aliases:
+          - warehouse.minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  minio-client:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - local-iceberg-lakehouse
+    volumes:
+      - /tmp:/tmp
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      AWS_REGION: dummy-region
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set minio http://minio:9000 admin password; do
+          echo "...waiting for minio..."
+          sleep 1
+        done
+        mc rm -r --force minio/warehouse || true
+        mc mb minio/warehouse
+        mc anonymous set public minio/warehouse
+        tail -f /dev/null
+
+networks:
+  local-iceberg-lakehouse:
+    name: local-iceberg-lakehouse
