@@ -1,0 +1,91 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: lab3-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  broker1:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: lab3-broker1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker1:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  broker2:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: lab3-broker2
+    depends_on:
+      - zookeeper
+    ports:
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093,PLAINTEXT_INTERNAL://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093,PLAINTEXT_INTERNAL://broker2:29093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: lab3-kafka-init
+    depends_on:
+      - broker1
+      - broker2
+    entrypoint:
+      - /bin/sh
+      - /scripts/create-topics.sh
+    volumes:
+      - ./scripts/create-topics.sh:/scripts/create-topics.sh:ro
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: lab3-kafka-ui
+    depends_on:
+      - broker1
+      - broker2
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: lab3-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker1:29092,broker2:29093
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+    container_name: lab3-producer
+    restart: on-failure
+    depends_on:
+      - kafka-init
+    environment:
+      BOOTSTRAP_SERVERS: broker1:29092,broker2:29093
+      TOPIC_ONE: Topic1
+      TOPIC_TWO: Topic2
+      CSV_PATH: /app/data/Divvy_Trips_2019_Q4.csv
+      PRODUCER_DELAY_MS: 0
+      PRODUCER_CONNECT_ATTEMPTS: 30
+      PRODUCER_CONNECT_DELAY_SECONDS: 5
+    volumes:
+      - ./Divvy_Trips_2019_Q4.csv:/app/data/Divvy_Trips_2019_Q4.csv:ro
