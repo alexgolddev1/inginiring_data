@@ -1,0 +1,37 @@
+services:
+  streams-init:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: lab4-kafka-init
+    entrypoint:
+      - /bin/sh
+      - /scripts/create-topics.sh
+    environment:
+      BOOTSTRAP_SERVERS: broker1:29092,broker2:29093
+    volumes:
+      - ./scripts/create-topics.sh:/scripts/create-topics.sh:ro
+    networks:
+      - lab3-network
+
+  streams-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lab4-streams-app
+    restart: on-failure
+    depends_on:
+      - streams-init
+    environment:
+      APPLICATION_ID: lab4-kafka-streams-app
+      BOOTSTRAP_SERVERS: broker1:29092,broker2:29093
+      INPUT_TOPIC: Topic1
+      OUTPUT_AVG_TOPIC: trip-duration-avg-by-day
+      OUTPUT_COUNT_TOPIC: trip-count-by-day
+      OUTPUT_TOP_START_TOPIC: top-start-station-by-day
+      OUTPUT_TOP3_TOPIC: top-3-stations-by-day
+    networks:
+      - lab3-network
+
+networks:
+  lab3-network:
+    external: true
+    name: ${LAB3_DOCKER_NETWORK:-lab_3_default}
